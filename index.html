@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#b8432a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pace">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Pace Keeper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: one phone-width column; the "need" pace is the hero, everything else is glanceable tiles below it. */
+:root {
+  --bg: #f3f4f1;
+  --surface: #ffffff;
+  --fg: #1b1d1c;
+  --muted: #5d625f;
+  --line: #d9dcd7;
+  --accent: #b8432a;       /* tartan track red */
+  --accent-fg: #ffffff;
+  --good: #2f7a4c;
+  --warn: #a8660b;
+  --bad: #b3261e;
+  --chip-good: #e2f1e7;
+  --chip-warn: #f7ead4;
+  --chip-bad: #f8dedb;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121413; --surface: #1c1f1d; --fg: #eef0ec; --muted: #9ba19d; --line: #2e3330;
+    --accent: #e0674b; --accent-fg: #160805;
+    --good: #6fcf91; --warn: #e8b05a; --bad: #f08a80;
+    --chip-good: #183324; --chip-warn: #3a2a10; --chip-bad: #3d1b18;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121413; --surface: #1c1f1d; --fg: #eef0ec; --muted: #9ba19d; --line: #2e3330;
+  --accent: #e0674b; --accent-fg: #160805;
+  --good: #6fcf91; --warn: #e8b05a; --bad: #f08a80;
+  --chip-good: #183324; --chip-warn: #3a2a10; --chip-bad: #3d1b18;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; -webkit-tap-highlight-color: transparent; }
+.wrap { max-width: 480px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 32px; display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--display); font-weight: 700; font-size: 28px; letter-spacing: .02em; text-transform: uppercase; margin: 0; }
+h1 span { color: var(--accent); }
+.units { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.units button { font: 600 13px var(--body); letter-spacing: .06em; text-transform: uppercase; padding: 6px 12px; background: transparent; color: var(--muted); border: 0; cursor: pointer; }
+.units button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.num { font-family: var(--display); font-variant-numeric: tabular-nums; }
+.label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+/* Hero */
+.hero { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden; }
+.hero::after { content: ""; position: absolute; inset: auto 0 0 0; height: 6px; background: repeating-linear-gradient(90deg, var(--accent) 0 28px, transparent 28px 36px); opacity: .85; }
+.need { font-size: clamp(76px, 26vw, 120px); font-weight: 700; line-height: .9; letter-spacing: -.01em; }
+.need small { font-size: .3em; font-weight: 600; color: var(--muted); letter-spacing: .02em; margin-left: 6px; }
+.hero-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.chip { font: 600 13px var(--body); padding: 5px 11px; border-radius: 999px; background: var(--chip-good); color: var(--good); }
+.chip.warn { background: var(--chip-warn); color: var(--warn); }
+.chip.bad { background: var(--chip-bad); color: var(--bad); }
+.chip.idle { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.delta { font-size: 22px; font-weight: 600; }
+
+/* Tiles */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile .v { font-size: 38px; font-weight: 600; line-height: 1; }
+.tile .v small { font-size: 15px; color: var(--muted); font-weight: 500; margin-left: 3px; }
+
+/* Progress */
+.progress { display: flex; flex-direction: column; gap: 6px; }
+.bar { height: 10px; border-radius: 99px; background: var(--line); position: relative; overflow: visible; }
+.bar .fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 99px; width: 0%; transition: width .4s; }
+.bar .ghost { position: absolute; top: -4px; bottom: -4px; width: 3px; background: var(--fg); border-radius: 2px; left: 0%; transition: left .4s; }
+.progress .meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+
+/* Controls */
+.controls { display: flex; gap: 10px; }
+.btn { flex: 1; font: 700 20px var(--display); letter-spacing: .06em; text-transform: uppercase; padding: 16px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn:focus-visible, .units button:focus-visible, input:focus-visible, select:focus-visible, .preset:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+.btn:disabled { opacity: .45; cursor: default; }
+
+.notice { font-size: 14px; line-height: 1.45; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; }
+.notice strong { color: var(--fg); }
+
+/* Setup */
+details.setup { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+details.setup > summary { list-style: none; cursor: pointer; padding: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+details.setup > summary::-webkit-details-marker { display: none; }
+details.setup > summary .goal { font-family: var(--display); font-size: 22px; font-weight: 600; }
+details.setup > summary .edit { font-size: 13px; font-weight: 600; color: var(--accent); }
+.setup-body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 14px; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.preset { font: 600 14px var(--body); padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+input, select { font: 600 20px var(--display); font-variant-numeric: tabular-nums; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); min-width: 0; }
+input.t { width: 4.2em; text-align: center; }
+input.d { width: 6em; }
+.sep { font: 600 20px var(--display); color: var(--muted); }
+.hint { font-size: 13px; color: var(--muted); }
+
+/* Splits */
+.splits h2 { font: 700 18px var(--display); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+.splits ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.splits li { display: grid; grid-template-columns: 3.5em 1fr auto; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; align-items: baseline; }
+.splits li .n { color: var(--muted); font-size: 14px; }
+.splits li .p { font: 600 20px var(--display); }
+.splits li .d { font-size: 14px; font-weight: 600; }
+.splits .empty { font-size: 14px; color: var(--muted); }
+.good-t { color: var(--good); } .bad-t { color: var(--bad); }
+@media (prefers-reduced-motion: reduce) { .bar .fill, .bar .ghost { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Pace<span>/</span>Keeper</h1>
+    <div class="units" role="group" aria-label="Units">
+      <button id="u-km" type="button" aria-pressed="true">km</button>
+      <button id="u-mi" type="button" aria-pressed="false">mi</button>
+    </div>
+  </header>
+
+  <section class="hero" aria-live="polite">
+    <div class="label" id="need-label">Pace needed to hit your goal</div>
+    <div class="need num" id="need">5:00<small>/km</small></div>
+    <div class="hero-row">
+      <span class="chip idle" id="status">Ready</span>
+      <span class="delta num" id="delta">±0:00</span>
+    </div>
+  </section>
+
+  <div class="tiles">
+    <div class="tile"><span class="label">Current pace</span><span class="v num" id="cur">–:––</span></div>
+    <div class="tile"><span class="label">Average pace</span><span class="v num" id="avg">–:––</span></div>
+    <div class="tile"><span class="label">Distance</span><span class="v num" id="dist">0.00<small>km</small></span></div>
+    <div class="tile"><span class="label">Time</span><span class="v num" id="time">0:00</span></div>
+    <div class="tile"><span class="label">Left to go</span><span class="v num" id="left">5.00<small>km</small></span></div>
+    <div class="tile"><span class="label">Projected finish</span><span class="v num" id="proj">–:––</span></div>
+  </div>
+
+  <div class="progress">
+    <div class="bar" aria-hidden="true"><div class="fill" id="fill"></div><div class="ghost" id="ghost" title="Where goal pace would put you"></div></div>
+    <div class="meta"><span>Bar: you · Line: goal pace</span><span id="pct">0%</span></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary" id="go" type="button">Start</button>
+    <button class="btn" id="lap" type="button" hidden>Lap</button>
+    <button class="btn" id="end" type="button" disabled>Reset</button>
+  </div>
+
+  <div class="notice" id="gps-note"><strong>GPS:</strong> waiting for you to press Start.</div>
+
+  <details class="setup" id="setup">
+    <summary><span><span class="label">Goal</span><br><span class="goal" id="goal-sum">5 km in 25:00</span></span><span class="edit">Change</span></summary>
+    <div class="setup-body">
+      <div class="presets" role="group" aria-label="Race presets">
+        <button class="preset" type="button" data-km="1.609344">1 mile</button>
+        <button class="preset" type="button" data-km="5">5K</button>
+        <button class="preset" type="button" data-km="10">10K</button>
+        <button class="preset" type="button" data-km="21.0975">Half</button>
+        <button class="preset" type="button" data-km="42.195">Marathon</button>
+      </div>
+      <div class="field">
+        <label class="label" for="g-dist">Distance</label>
+        <div class="field-row"><input class="d" id="g-dist" type="number" inputmode="decimal" min="0.1" step="0.01" value="5"><span class="hint" id="g-unit">km</span></div>
+      </div>
+      <div class="field">
+        <span class="label">Goal time (h : m : s)</span>
+        <div class="field-row">
+          <input class="t" id="g-h" type="number" inputmode="numeric" min="0" value="0" aria-label="Hours"><span class="sep">:</span>
+          <input class="t" id="g-m" type="number" inputmode="numeric" min="0" max="59" value="25" aria-label="Minutes"><span class="sep">:</span>
+          <input class="t" id="g-s" type="number" inputmode="numeric" min="0" max="59" value="0" aria-label="Seconds">
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">Or set a target pace (m : s per <span id="p-unit">km</span>)</span>
+        <div class="field-row">
+          <input class="t" id="p-m" type="number" inputmode="numeric" min="0" value="5" aria-label="Pace minutes"><span class="sep">:</span>
+          <input class="t" id="p-s" type="number" inputmode="numeric" min="0" max="59" value="0" aria-label="Pace seconds">
+        </div>
+        <span class="hint">Changing either one updates the other.</span>
+      </div>
+      <div class="field">
+        <label class="label" for="lapd">Lap button distance (for running without GPS)</label>
+        <select id="lapd">
+          <option value="unit">1 km / 1 mi marker</option>
+          <option value="0.4">400 m track lap</option>
+          <option value="0.2">200 m indoor lap</option>
+        </select>
+      </div>
+    </div>
+  </details>
+
+  <section class="splits">
+    <h2>Splits</h2>
+    <ol id="splits"></ol>
+    <p class="empty" id="splits-empty">Your time for each <span id="split-unit">km</span> shows up here as you run.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var KM_PER_MI = 1.609344;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var store = {
+    get: function (k) { try { return JSON.parse(localStorage.getItem("pk." + k)); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem("pk." + k, JSON.stringify(v)); } catch (e) {} }
+  };
+
+  // Everything internal is in kilometres and seconds.
+  var cfg = Object.assign({ unit: "km", goalKm: 5, goalSec: 1500, lap: "unit" }, store.get("cfg") || {});
+  var run = { state: "idle", startedAt: 0, pausedTotal: 0, pausedAt: 0, km: 0, last: null, trail: [], splits: [], watchId: null, gps: "none" };
+  var wake = null;
+
+  function unitKm() { return cfg.unit === "mi" ? KM_PER_MI : 1; }
+  function toUnit(km) { return km / unitKm(); }
+  function fmtTime(sec) {
+    if (!isFinite(sec)) return "–:––";
+    var neg = sec < 0; sec = Math.round(Math.abs(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    var out = h ? h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0") : m + ":" + String(s).padStart(2, "0");
+    return (neg ? "-" : "") + out;
+  }
+  // pace in seconds per km -> string per display unit
+  function fmtPace(secPerKm) {
+    if (!isFinite(secPerKm) || secPerKm <= 0 || secPerKm > 60 * 60) return "–:––";
+    return fmtTime(secPerKm * unitKm());
+  }
+  function elapsed() {
+    if (run.state === "idle") return 0;
+    var now = run.state === "paused" ? run.pausedAt : Date.now();
+    return (now - run.startedAt - run.pausedTotal) / 1000;
+  }
+
+  // ---------- GPS ----------
+  function hav(a, b) {
+    var R = 6371, r = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+    var x = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.sqrt(x));
+  }
+  function onPos(p) {
+    run.gps = "ok";
+    var c = p.coords, pt = { lat: c.latitude, lon: c.longitude, t: p.timestamp || Date.now(), acc: c.accuracy };
+    if (run.state !== "running") { run.last = null; render(); return; }
+    if (pt.acc > 30) { run.gps = "weak"; render(); return; }
+    if (run.last) {
+      var d = hav(run.last, pt), dt = (pt.t - run.last.t) / 1000;
+      if (dt <= 0) return;
+      if (d * 1000 < Math.max(3, pt.acc * 0.4)) return; // jitter while standing still
+      if (d * 1000 / dt > 12) { run.last = pt; return; } // faster than a sprinter: GPS jump
+      addKm(d);
+    }
+    run.last = pt;
+    render();
+  }
+  function onPosErr(e) {
+    run.gps = e && e.code === 1 ? "denied" : "none";
+    render();
+  }
+  function startGps() {
+    if (!("geolocation" in navigator)) { onPosErr(null); return; }
+    try {
+      run.watchId = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+      if (run.gps !== "ok") run.gps = "waiting";
+    } catch (e) { onPosErr(null); }
+  }
+  function stopGps() {
+    if (run.watchId != null) { try { navigator.geolocation.clearWatch(run.watchId); } catch (e) {} }
+    run.watchId = null; run.last = null;
+  }
+
+  function addKm(d) {
+    var before = run.km;
+    run.km += d;
+    run.trail.push({ t: elapsed(), km: run.km });
+    if (run.trail.length > 400) run.trail.splice(0, run.trail.length - 400);
+    // Split each time we cross a whole display unit
+    var u = unitKm(), crossed = Math.floor(run.km / u) - Math.floor(before / u);
+    for (var i = 0; i < crossed; i++) {
+      var n = run.splits.length + 1, prevT = n > 1 ? run.splits[n - 2].at : 0;
+      // interpolate when exactly we crossed the marker
+      var markKm = n * u, frac = d > 0 ? (markKm - before) / d : 1;
+      var prevTrailT = run.trail.length > 1 ? run.trail[run.trail.length - 2].t : 0;
+      var at = prevTrailT + (elapsed() - prevTrailT) * Math.min(1, Math.max(0, frac));
+      run.splits.push({ n: n, at: at, sec: at - prevT });
+      try { navigator.vibrate && navigator.vibrate(200); } catch (e) {}
+    }
+  }
+
+  function currentPace() {
+    var t = elapsed(), tr = run.trail;
+    if (tr.length < 2) return NaN;
+    var windowSec = run.gps === "ok" || run.gps === "weak" ? 30 : 1e9;
+    var j = tr.length - 1;
+    while (j > 0 && t - tr[j - 1].t <= windowSec) j--;
+    var a = tr[Math.max(0, j - 1)], dk = run.km - a.km, dt = t - a.t;
+    return dk > 0.005 ? dt / dk : NaN;
+  }
+
+  // ---------- Render ----------
+  function render() {
+    var u = cfg.unit, t = elapsed(), goalPace = cfg.goalSec / cfg.goalKm;
+    var leftKm = Math.max(0, cfg.goalKm - run.km), leftSec = cfg.goalSec - t;
+    var need = leftKm > 0 ? leftSec / leftKm : NaN;
+    var avg = run.km > 0.01 ? t / run.km : NaN;
+    var delta = run.km * goalPace - t; // + = ahead of goal
+    var done = run.km >= cfg.goalKm && run.state !== "idle";
+
+    $("need").innerHTML = (run.state === "idle" ? fmtPace(goalPace) : done ? fmtTime(t) : leftSec <= 0 ? "Over" : fmtPace(need)) + "<small>" + (done ? "" : "/" + u) + "</small>";
+    $("need-label").textContent = done ? "Finished in" : run.state === "idle" ? "Goal pace" : "Pace needed for the rest";
+
+    var chip = $("status"), cls = "chip", txt;
+    if (run.state === "idle") { cls += " idle"; txt = "Ready"; }
+    else if (done) { txt = t <= cfg.goalSec ? "Goal hit" : "Done"; if (t > cfg.goalSec) cls += " bad"; }
+    else if (run.state === "paused") { cls += " idle"; txt = "Paused"; }
+    else if (leftSec <= 0) { cls += " bad"; txt = "Past goal time"; }
+    else if (run.km < 0.05) { cls += " idle"; txt = "Getting going"; }
+    else if (delta >= 5) { txt = "Ahead of goal"; }
+    else if (delta > -10) { cls += " warn"; txt = "Right on it"; }
+    else { cls += " bad"; txt = "Speed up"; }
+    chip.className = cls; chip.textContent = txt;
+
+    var dEl = $("delta");
+    dEl.textContent = run.state === "idle" ? "" : (delta >= 0 ? "+" : "−") + fmtTime(Math.abs(delta)).replace("-", "") + (delta >= 0 ? " ahead" : " behind");
+    dEl.className = "delta num " + (run.state === "idle" ? "" : delta >= 0 ? "good-t" : "bad-t");
+
+    $("cur").textContent = run.state === "running" ? fmtPace(currentPace()) : "–:––";
+    $("avg").textContent = fmtPace(avg);
+    $("dist").innerHTML = toUnit(run.km).toFixed(2) + "<small>" + u + "</small>";
+    $("time").textContent = fmtTime(t);
+    $("left").innerHTML = toUnit(leftKm).toFixed(2) + "<small>" + u + "</small>";
+    $("proj").textContent = isFinite(avg) && run.km > 0.05 ? fmtTime(avg * cfg.goalKm) : "–:––";
+
+    var pct = Math.min(100, run.km / cfg.goalKm * 100), gpct = Math.min(100, t / goalPace / cfg.goalKm * 100);
+    $("fill").style.width = pct + "%"; $("ghost").style.left = "calc(" + gpct + "% - 1.5px)"; $("pct").textContent = Math.round(pct) + "%";
+
+    $("go").textContent = run.state === "running" ? "Pause" : run.state === "paused" ? "Resume" : "Start";
+    $("end").disabled = run.state === "idle";
+    $("lap").hidden = run.state === "idle" || run.gps === "ok" || run.gps === "weak";
+    $("end").textContent = "Reset";
+
+    var note = $("gps-note"), lapName = lapLabel();
+    var msgs = {
+      none: run.state === "idle" ? "<strong>GPS:</strong> starts when you press Start." : "<strong>No GPS here.</strong> Tap <strong>Lap</strong> each time you pass a " + lapName + " to log distance.",
+      waiting: "<strong>GPS:</strong> finding your location…",
+      ok: "<strong>GPS:</strong> locked on. Distance is tracking.",
+      weak: "<strong>GPS:</strong> signal is weak, so some distance may be skipped. Open sky helps.",
+      denied: "<strong>Location is blocked.</strong> Tap <strong>Lap</strong> each time you pass a " + lapName + ", or allow location for this page in your browser settings."
+    };
+    note.innerHTML = msgs[run.gps] || msgs.none;
+
+    renderSplits(goalPace);
+  }
+  function lapLabel() { return cfg.lap === "unit" ? (cfg.unit === "mi" ? "mile marker" : "kilometre marker") : (Math.round(parseFloat(cfg.lap) * 1000) + " m lap"); }
+
+  var shownSplits = -1;
+  function renderSplits(goalPace) {
+    if (shownSplits === run.splits.length + (cfg.unit === "mi" ? 1000 : 0)) return;
+    shownSplits = run.splits.length + (cfg.unit === "mi" ? 1000 : 0);
+    var ol = $("splits"); ol.textContent = "";
+    var gp = goalPace * unitKm();
+    run.splits.slice().reverse().forEach(function (s) {
+      var li = document.createElement("li"), diff = s.sec - gp;
+      li.innerHTML = '<span class="n">' + cfg.unit + " " + s.n + '</span><span class="p num">' + fmtTime(s.sec) + '</span><span class="d ' + (diff <= 0 ? "good-t" : "bad-t") + '">' + (diff <= 0 ? "−" : "+") + fmtTime(Math.abs(diff)) + "</span>";
+      ol.appendChild(li);
+    });
+    $("splits-empty").hidden = run.splits.length > 0;
+  }
+
+  // ---------- Setup ----------
+  function syncInputs() {
+    var u = cfg.unit;
+    $("u-km").setAttribute("aria-pressed", u === "km"); $("u-mi").setAttribute("aria-pressed", u === "mi");
+    $("g-unit").textContent = u; $("p-unit").textContent = u; $("split-unit").textContent = u === "mi" ? "mile" : "km";
+    $("g-dist").value = +toUnit(cfg.goalKm).toFixed(2);
+    var g = Math.round(cfg.goalSec);
+    $("g-h").value = Math.floor(g / 3600); $("g-m").value = Math.floor(g % 3600 / 60); $("g-s").value = g % 60;
+    var p = Math.round(cfg.goalSec / cfg.goalKm * unitKm());
+    $("p-m").value = Math.floor(p / 60); $("p-s").value = p % 60;
+    $("lapd").value = cfg.lap;
+    $("goal-sum").textContent = +toUnit(cfg.goalKm).toFixed(2) + " " + u + " in " + fmtTime(cfg.goalSec);
+  }
+  function n(id) { var v = parseFloat($(id).value); return isFinite(v) && v >= 0 ? v : 0; }
+  function save() { store.set("cfg", cfg); }
+  function fromGoalTime() {
+    var d = n("g-dist"), s = n("g-h") * 3600 + n("g-m") * 60 + n("g-s");
+    if (d > 0) cfg.goalKm = d * unitKm();
+    if (s > 0) cfg.goalSec = s;
+    save(); syncInputs(); shownSplits = -1; render();
+  }
+  function fromPace() {
+    var p = n("p-m") * 60 + n("p-s"), d = n("g-dist");
+    if (d > 0) cfg.goalKm = d * unitKm();
+    if (p > 0) cfg.goalSec = p / unitKm() * cfg.goalKm;
+    save(); syncInputs(); shownSplits = -1; render();
+  }
+  ["g-dist", "g-h", "g-m", "g-s"].forEach(function (id) { $(id).addEventListener("change", fromGoalTime); });
+  ["p-m", "p-s"].forEach(function (id) { $(id).addEventListener("change", fromPace); });
+  $("lapd").addEventListener("change", function () { cfg.lap = $("lapd").value; save(); render(); });
+  Array.prototype.forEach.call(document.querySelectorAll(".preset"), function (b) {
+    b.addEventListener("click", function () {
+      var pace = cfg.goalSec / cfg.goalKm; cfg.goalKm = parseFloat(b.dataset.km); cfg.goalSec = Math.round(pace * cfg.goalKm);
+      save(); syncInputs(); render();
+    });
+  });
+  function setUnit(u) {
+    if (run.state !== "idle" && run.splits.length) return; // keep splits consistent mid-run
+    cfg.unit = u; save(); syncInputs(); shownSplits = -1; render();
+  }
+  $("u-km").addEventListener("click", function () { setUnit("km"); });
+  $("u-mi").addEventListener("click", function () { setUnit("mi"); });
+
+  // ---------- Controls ----------
+  function lockScreen() {
+    try { if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function (w) { wake = w; }).catch(function () {}); } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && run.state === "running") lockScreen(); });
+
+  $("go").addEventListener("click", function () {
+    if (run.state === "idle") {
+      run.state = "running"; run.startedAt = Date.now(); run.pausedTotal = 0; run.trail = [{ t: 0, km: 0 }];
+      $("setup").open = false; startGps(); lockScreen();
+    } else if (run.state === "running") {
+      run.state = "paused"; run.pausedAt = Date.now(); run.last = null;
+    } else {
+      run.pausedTotal += Date.now() - run.pausedAt; run.state = "running"; run.last = null; lockScreen();
+    }
+    render();
+  });
+  $("lap").addEventListener("click", function () {
+    if (run.state !== "running") return;
+    addKm(cfg.lap === "unit" ? unitKm() : parseFloat(cfg.lap));
+    render();
+  });
+  // Two taps to reset so a pocket bump can't wipe a run
+  var armed = 0;
+  $("end").addEventListener("click", function () {
+    if (Date.now() - armed > 3000) { armed = Date.now(); $("end").textContent = "Tap again"; setTimeout(function () { if (Date.now() - armed >= 3000) render(); }, 3100); return; }
+    armed = 0; stopGps();
+    run = { state: "idle", startedAt: 0, pausedTotal: 0, pausedAt: 0, km: 0, last: null, trail: [], splits: [], watchId: null, gps: "none" };
+    try { wake && wake.release(); } catch (e) {} wake = null;
+    shownSplits = -1; render();
+  });
+
+  setInterval(function () { if (run.state === "running") { var keep = $("end").textContent === "Tap again"; render(); if (keep) $("end").textContent = "Tap again"; } }, 1000);
+  syncInputs(); render();
+})();
+</script>
+<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});</script>
+</body>
+</html>

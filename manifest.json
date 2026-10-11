@@ -1,0 +1,14 @@
+{
+  "name": "Pace Keeper",
+  "short_name": "Pace",
+  "description": "Shows the pace you need for the rest of your run to hit your goal time.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121413",
+  "theme_color": "#b8432a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
