@@ -124,6 +124,20 @@ input.d { width: 6em; }
 .splits li .d { font-size: 14px; font-weight: 600; }
 .splits .empty { font-size: 14px; color: var(--muted); }
 .good-t { color: var(--good); } .bad-t { color: var(--bad); }
+/* Coach row + pocket mode */
+.coach { display: flex; gap: 10px; flex-wrap: wrap; }
+.pill { flex: 1; min-width: 9em; font: 600 15px var(--body); padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+.pill[aria-pressed="true"] .dot { background: var(--good); }
+.pill:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.check input { width: 22px; height: 22px; accent-color: var(--accent); }
+.pocket { position: fixed; inset: 0; z-index: 10; background: #000; color: #8a8f8b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; touch-action: none; user-select: none; -webkit-user-select: none; }
+.pocket .pk-need { font: 700 64px var(--display); color: #d8dbd6; font-variant-numeric: tabular-nums; }
+.pocket .pk-hold { font: 600 15px var(--body); letter-spacing: .04em; }
+.pocket .pk-ring { width: 120px; height: 6px; border-radius: 3px; background: #222; overflow: hidden; }
+.pocket .pk-ring i { display: block; height: 100%; width: 0; background: #e0674b; }
+.pocket.holding .pk-ring i { width: 100%; transition: width 2s linear; }
 @media (prefers-reduced-motion: reduce) { .bar .fill, .bar .ghost { transition: none; } }
 </style>
 
@@ -165,6 +179,11 @@ input.d { width: 6em; }
     <button class="btn" id="end" type="button" disabled>Reset</button>
   </div>
 
+  <div class="coach">
+    <button class="pill" id="voice-btn" type="button" aria-pressed="true"><span class="dot"></span><span id="voice-txt">Voice coach on</span></button>
+    <button class="pill" id="pocket-btn" type="button">Pocket mode</button>
+  </div>
+
   <div class="notice" id="gps-note"><strong>GPS:</strong> waiting for you to press Start.</div>
 
   <details class="setup" id="setup">
@@ -198,6 +217,16 @@ input.d { width: 6em; }
         <span class="hint">Changing either one updates the other.</span>
       </div>
       <div class="field">
+        <label class="label" for="every">Voice updates</label>
+        <select id="every">
+          <option value="0">At each km / mile only</option>
+          <option value="1">Each km / mile, plus every minute</option>
+          <option value="2">Each km / mile, plus every 2 minutes</option>
+          <option value="5">Each km / mile, plus every 5 minutes</option>
+        </select>
+        <label class="check"><input id="buzz" type="checkbox" checked> Vibrate on each split and when you fall behind (Android)</label>
+      </div>
+      <div class="field">
         <label class="label" for="lapd">Lap button distance (for running without GPS)</label>
         <select id="lapd">
           <option value="unit">1 km / 1 mi marker</option>
@@ -215,6 +244,13 @@ input.d { width: 6em; }
   </section>
 </div>
 
+<div class="pocket" id="pocket" hidden>
+  <div class="label">Pace needed</div>
+  <div class="pk-need" id="pk-need">–:––</div>
+  <div class="pk-hold">Hold anywhere for 2 seconds to unlock</div>
+  <div class="pk-ring"><i></i></div>
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -227,7 +263,7 @@ input.d { width: 6em; }
   };
 
   // Everything internal is in kilometres and seconds.
-  var cfg = Object.assign({ unit: "km", goalKm: 5, goalSec: 1500, lap: "unit" }, store.get("cfg") || {});
+  var cfg = Object.assign({ unit: "km", goalKm: 5, goalSec: 1500, lap: "unit", voice: true, every: 2, buzz: true }, store.get("cfg") || {});
   var run = { state: "idle", startedAt: 0, pausedTotal: 0, pausedAt: 0, km: 0, last: null, trail: [], splits: [], watchId: null, gps: "none" };
   var wake = null;
 
@@ -303,7 +339,7 @@ input.d { width: 6em; }
       var prevTrailT = run.trail.length > 1 ? run.trail[run.trail.length - 2].t : 0;
       var at = prevTrailT + (elapsed() - prevTrailT) * Math.min(1, Math.max(0, frac));
       run.splits.push({ n: n, at: at, sec: at - prevT });
-      try { navigator.vibrate && navigator.vibrate(200); } catch (e) {}
+      coach.split(run.splits[run.splits.length - 1]);
     }
   }
 
@@ -316,6 +352,79 @@ input.d { width: 6em; }
     var a = tr[Math.max(0, j - 1)], dk = run.km - a.km, dt = t - a.t;
     return dk > 0.005 ? dt / dk : NaN;
   }
+
+  // ---------- Voice coach ----------
+  var coach = (function () {
+    var synth = window.speechSynthesis, lastSpoke = 0, lastPeriodic = 0, lastStatus = "", lastAlert = 0, finished = false;
+    function unitWord(plural) { return cfg.unit === "mi" ? (plural ? "miles" : "mile") : (plural ? "kilometres" : "kilometre"); }
+    function dur(sec) {
+      sec = Math.round(Math.abs(sec));
+      var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60, out = [];
+      if (h) out.push(h + (h === 1 ? " hour" : " hours"));
+      if (m) out.push(m + (m === 1 ? " minute" : " minutes"));
+      if (s || !out.length) out.push(s + (s === 1 ? " second" : " seconds"));
+      return out.join(" ");
+    }
+    function pace(secPerKm) { return dur(secPerKm * unitKm()) + " per " + unitWord(false); }
+    function say(text) {
+      lastSpoke = Date.now();
+      if (!cfg.voice || !synth) return;
+      try {
+        synth.cancel();
+        var u = new SpeechSynthesisUtterance(text);
+        u.rate = 1.05; u.lang = document.documentElement.lang || "en-US";
+        synth.speak(u);
+      } catch (e) {}
+    }
+    function buzz(pattern) { if (!cfg.buzz) return; try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) {} }
+    function numbers() {
+      var t = elapsed(), goalPace = cfg.goalSec / cfg.goalKm, leftKm = cfg.goalKm - run.km;
+      return { t: t, delta: run.km * goalPace - t, need: leftKm > 0 ? (cfg.goalSec - t) / leftKm : NaN, leftKm: leftKm };
+    }
+    function where(n) {
+      var ahead = n.delta >= 0, d = Math.abs(n.delta) < 3 ? "Right on goal pace." : dur(n.delta) + (ahead ? " ahead." : " behind.");
+      var need = n.t >= cfg.goalSec ? "You're past your goal time." : (ahead ? "Hold " : "Speed up to ") + pace(n.need) + ".";
+      return d + " " + need;
+    }
+    return {
+      start: function () {
+        finished = false; lastStatus = ""; lastPeriodic = Date.now();
+        say("Starting. Goal pace " + pace(cfg.goalSec / cfg.goalKm) + ".");
+      },
+      pause: function () { say("Paused."); },
+      resume: function () { say("Resumed."); lastPeriodic = Date.now(); },
+      split: function (sp) {
+        var n = numbers();
+        if (n.leftKm <= 0.0005) return; // finish handles the last one
+        say(unitWord(false).replace(/^./, function (c) { return c.toUpperCase(); }) + " " + sp.n + " in " + dur(sp.sec) + ". " + where(n));
+        buzz(n.delta >= 0 ? 200 : [150, 100, 150, 100, 150]);
+        lastPeriodic = Date.now();
+      },
+      tick: function () {
+        if (run.state !== "running") return;
+        var n = numbers(), now = Date.now();
+        if (!finished && n.leftKm <= 0) {
+          finished = true;
+          var miss = n.t - cfg.goalSec;
+          say("Finished in " + dur(n.t) + ". " + (miss <= 0 ? "Goal hit by " + dur(miss) + "." : "Missed the goal by " + dur(miss) + "."));
+          buzz([300, 120, 300, 120, 600]);
+          return;
+        }
+        if (finished || run.km < 0.05) return;
+        var status = n.delta >= 5 ? "ahead" : n.delta > -10 ? "on" : "behind";
+        if (lastStatus && status !== lastStatus && now - lastAlert > 60000 && now - lastSpoke > 15000) {
+          if (status === "behind") { say("You've dropped behind goal. Speed up to " + pace(n.need) + "."); buzz([400, 150, 400]); lastAlert = now; }
+          else if (lastStatus === "behind") { say("Back on track. " + where(n)); lastAlert = now; }
+        }
+        lastStatus = status;
+        if (cfg.every > 0 && now - lastPeriodic >= cfg.every * 60000) {
+          lastPeriodic = now;
+          if (now - lastSpoke > 30000) say(dur(n.t).replace(/ \d+ seconds?$/, "") + ". " + toUnit(run.km).toFixed(2) + " " + unitWord(true) + ". " + where(n));
+        }
+      },
+      test: function () { say("Voice coach on. You'll hear updates at each " + unitWord(false) + "."); }
+    };
+  })();
 
   // ---------- Render ----------
   function render() {
@@ -369,6 +478,10 @@ input.d { width: 6em; }
     };
     note.innerHTML = msgs[run.gps] || msgs.none;
 
+    $("voice-btn").setAttribute("aria-pressed", cfg.voice);
+    $("voice-txt").textContent = cfg.voice ? "Voice coach on" : "Voice coach off";
+    $("pk-need").textContent = done ? fmtTime(t) : run.state === "idle" ? fmtPace(goalPace) : leftSec <= 0 ? "Over" : fmtPace(need);
+
     renderSplits(goalPace);
   }
   function lapLabel() { return cfg.lap === "unit" ? (cfg.unit === "mi" ? "mile marker" : "kilometre marker") : (Math.round(parseFloat(cfg.lap) * 1000) + " m lap"); }
@@ -398,6 +511,7 @@ input.d { width: 6em; }
     var p = Math.round(cfg.goalSec / cfg.goalKm * unitKm());
     $("p-m").value = Math.floor(p / 60); $("p-s").value = p % 60;
     $("lapd").value = cfg.lap;
+    $("every").value = String(cfg.every); $("buzz").checked = !!cfg.buzz;
     $("goal-sum").textContent = +toUnit(cfg.goalKm).toFixed(2) + " " + u + " in " + fmtTime(cfg.goalSec);
   }
   function n(id) { var v = parseFloat($(id).value); return isFinite(v) && v >= 0 ? v : 0; }
@@ -417,6 +531,19 @@ input.d { width: 6em; }
   ["g-dist", "g-h", "g-m", "g-s"].forEach(function (id) { $(id).addEventListener("change", fromGoalTime); });
   ["p-m", "p-s"].forEach(function (id) { $(id).addEventListener("change", fromPace); });
   $("lapd").addEventListener("change", function () { cfg.lap = $("lapd").value; save(); render(); });
+  $("every").addEventListener("change", function () { cfg.every = parseInt($("every").value, 10) || 0; save(); });
+  $("buzz").addEventListener("change", function () { cfg.buzz = $("buzz").checked; save(); });
+  $("voice-btn").addEventListener("click", function () { cfg.voice = !cfg.voice; save(); render(); if (cfg.voice) coach.test(); else try { speechSynthesis.cancel(); } catch (e) {} });
+
+  // Pocket mode: black screen that ignores taps; hold 2 s to leave
+  var pk = $("pocket"), holdT = null;
+  $("pocket-btn").addEventListener("click", function () { pk.hidden = false; lockScreen(); });
+  pk.addEventListener("pointerdown", function (e) {
+    e.preventDefault(); pk.classList.add("holding");
+    holdT = setTimeout(function () { pk.hidden = true; pk.classList.remove("holding"); }, 2000);
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) { pk.addEventListener(ev, function () { clearTimeout(holdT); pk.classList.remove("holding"); }); });
+  pk.addEventListener("contextmenu", function (e) { e.preventDefault(); });
   Array.prototype.forEach.call(document.querySelectorAll(".preset"), function (b) {
     b.addEventListener("click", function () {
       var pace = cfg.goalSec / cfg.goalKm; cfg.goalKm = parseFloat(b.dataset.km); cfg.goalSec = Math.round(pace * cfg.goalKm);
@@ -439,11 +566,11 @@ input.d { width: 6em; }
   $("go").addEventListener("click", function () {
     if (run.state === "idle") {
       run.state = "running"; run.startedAt = Date.now(); run.pausedTotal = 0; run.trail = [{ t: 0, km: 0 }];
-      $("setup").open = false; startGps(); lockScreen();
+      $("setup").open = false; startGps(); lockScreen(); coach.start();
     } else if (run.state === "running") {
-      run.state = "paused"; run.pausedAt = Date.now(); run.last = null;
+      run.state = "paused"; run.pausedAt = Date.now(); run.last = null; coach.pause();
     } else {
-      run.pausedTotal += Date.now() - run.pausedAt; run.state = "running"; run.last = null; lockScreen();
+      run.pausedTotal += Date.now() - run.pausedAt; run.state = "running"; run.last = null; lockScreen(); coach.resume();
     }
     render();
   });
@@ -462,7 +589,7 @@ input.d { width: 6em; }
     shownSplits = -1; render();
   });
 
-  setInterval(function () { if (run.state === "running") { var keep = $("end").textContent === "Tap again"; render(); if (keep) $("end").textContent = "Tap again"; } }, 1000);
+  setInterval(function () { if (run.state === "running") { var keep = $("end").textContent === "Tap again"; render(); if (keep) $("end").textContent = "Tap again"; coach.tick(); } }, 1000);
   syncInputs(); render();
 })();
 </script>
